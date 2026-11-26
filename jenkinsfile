@@ -1,0 +1,87 @@
+
+
+pipeline {
+    agent any
+
+    tools {
+        maven 'mymaven'
+        jdk 'jdk17'
+        nodejs 'node16'
+    }
+
+    environment {
+        SCANNER_HOME = tool 'mysonar'
+    }
+
+    stages {
+        stage('Clean WS') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Code Checkout') {
+            steps {
+                git 'https://github.com/DurgaPrasadSonti/docker-project-2.git'
+            }
+        }
+
+        stage('CQA') {
+            steps {
+                withSonarQubeEnv('mysonar') {
+                    sh '''
+                        mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                        -Dsonar.projectKey=Docker \
+                        -Dsonar.host.url=http://13.201.224.101:9000 \
+                        -Dsonar.login=sqa_0aa5be7d79a9abdc41ea54c20e74944e25ca27a6
+                    '''
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+                sh 'cp -r target Docker-app'
+            }
+        }
+
+        stage('Dockerfile') {
+            steps {
+                sh 'docker build -t durgaprasad19982001/ourproject:app Docker-app'
+                sh 'docker build -t durgaprasad19982001/ourproject:db Docker-db'
+            }
+        }
+
+        stage('trivy file') {
+            steps {
+                sh 'trivy fs . > trivy.txt'
+            }
+        }
+
+        stage('ImageScan') {
+            steps {
+                sh 'trivy image durgaprasad19982001/ourproject:app'
+                sh 'trivy image durgaprasad19982001/ourproject:db'
+            }
+        }
+
+        stage('DockerPush') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'dockerhub') {
+                        sh 'docker push durgaprasad19982001/ourproject:app'
+                        sh 'docker push durgaprasad19982001/ourproject:db'
+                    }
+                }
+            }
+        }
+
+        stage('Container') {
+            steps {
+                sh 'docker run -d --name devopsdb durgaprasad19982001/ourproject:db'
+                sh 'docker run -d --name application --link devopsdb:db -p 1111:8080 durgaprasad19982001/ourproject:app'
+            }
+        }
+    }
+}
